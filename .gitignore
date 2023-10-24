@@ -30,6 +30,8 @@ misc/hooks/pre-commit-custom-*
 #############################
 
 # Buildsystem
+zig-cache/
+zig-out/
 bin
 *.gen.*
 compile_commands.json

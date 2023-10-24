@@ -68,74 +68,72 @@ pub const EngineBuildConfiguration = struct {
     builtin_zstd: bool,
 
     // platform options
-    platform_opts: PlatformOptions,
+    // NOTE: these MUST start with platform_. to add new platforms, use the same
+    // format.
+    platform_windows: ?EngineBuildConfigurationWindows,
+    platform_web: ?EngineBuildConfigurationWeb,
+    platform_uwp: ?EngineBuildConfigurationUWP,
+    platform_macos: ?EngineBuildConfigurationMacOS,
+    platform_linuxbsd: ?EngineBuildConfigurationLinuxBSD,
+    platform_ios: ?EngineBuildConfigurationIOS,
+    platform_android: ?EngineBuildConfigurationAndroid,
 
-    pub const PlatformOptions = union(enum) {
-        windows: EngineBuildConfigurationWindows,
-        web: EngineBuildConfigurationWeb,
-        uwp: EngineBuildConfigurationUWP,
-        macos: EngineBuildConfigurationMacOS,
-        linuxbsd: EngineBuildConfigurationLinuxBSD,
-        ios: EngineBuildConfigurationIOS,
-        android: EngineBuildConfigurationAndroid,
+    pub const EngineBuildConfigurationWindows = struct {
+        use_asan: bool,
+    };
 
-        pub const EngineBuildConfigurationWindows = struct {
-            use_asan: bool,
-        };
+    pub const EngineBuildConfigurationWeb = struct {
+        initial_memory: u64, // 32 by default
+        use_assertions: bool,
+        use_ubsan: bool,
+        use_lsan: bool,
+        use_safe_heap: bool,
+        javascript_eval: bool,
+        dlink_enabled: bool,
+        use_closure_compiler: bool,
+    };
 
-        pub const EngineBuildConfigurationWeb = struct {
-            initial_memory: u64, // 32 by default
-            use_assertions: bool,
-            use_ubsan: bool,
-            use_lsan: bool,
-            use_safe_heap: bool,
-            javascript_eval: bool,
-            dlink_enabled: bool,
-            use_closure_compiler: bool,
-        };
+    pub const EngineBuildConfigurationUWP = struct {};
 
-        pub const EngineBuildConfigurationUWP = struct {};
+    pub const EngineBuildConfigurationMacOS = struct {
+        osxcross_sdk: []const u8, // default "darwin16"
+        macos_sdk_path: ?[]const u8,
+        vulkan_sdk_path: ?[]const u8,
+        use_ubsan: bool,
+        use_asan: bool,
+        use_tsan: bool,
+        use_coverage: bool,
+    };
 
-        pub const EngineBuildConfigurationMacOS = struct {
-            osxcross_sdk: []const u8, // default "darwin16"
-            macos_sdk_path: ?[]const u8,
-            vulkan_sdk_path: ?[]const u8,
-            use_ubsan: bool,
-            use_asan: bool,
-            use_tsan: bool,
-            use_coverage: bool,
-        };
+    pub const EngineBuildConfigurationLinuxBSD = struct {
+        use_coverage: bool,
+        use_ubsan: bool,
+        use_asan: bool,
+        use_lsan: bool,
+        use_tsan: bool,
+        use_msan: bool,
+        use_sowrap: bool,
+        alsa: bool,
+        pulseaudio: bool,
+        dbus: bool,
+        speechd: bool,
+        fontconfig: bool,
+        udev: bool,
+        x11: bool,
+        touch: bool,
+    };
 
-        pub const EngineBuildConfigurationLinuxBSD = struct {
-            use_coverage: bool,
-            use_ubsan: bool,
-            use_asan: bool,
-            use_lsan: bool,
-            use_tsan: bool,
-            use_msan: bool,
-            use_sowrap: bool,
-            alsa: bool,
-            pulseaudio: bool,
-            dbus: bool,
-            speechd: bool,
-            fontconfig: bool,
-            udev: bool,
-            x11: bool,
-            touch: bool,
-        };
+    pub const EngineBuildConfigurationIOS = struct {
+        ios_toolchain_path: []const u8, // default is "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain"
+        ios_sdk_path: ?[]const u8,
+        ios_triple: ?[]const u8,
+        ios_simulator: bool,
+    };
 
-        pub const EngineBuildConfigurationIOS = struct {
-            ios_toolchain_path: []const u8, // default is "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain"
-            ios_sdk_path: ?[]const u8,
-            ios_triple: ?[]const u8,
-            ios_simulator: bool,
-        };
-
-        pub const EngineBuildConfigurationAndroid = struct {
-            android_sdk_root: []const u8,
-            ndk_platform: []const u8,
-            store_release: bool,
-        };
+    pub const EngineBuildConfigurationAndroid = struct {
+        android_sdk_root: []const u8,
+        ndk_platform: []const u8,
+        store_release: bool,
     };
 
     pub const EngineOptimizeMode = enum {
@@ -168,6 +166,13 @@ pub const EngineBuildConfiguration = struct {
     };
 
     pub const EngineFloatingPrecision = enum { Single, Double };
+};
+
+/// A struct containing all of the state which gets accumulated while doing the
+/// logic that figures out what flags and source files to use, etc.
+/// Basically just some lists of source files and flags.
+pub const EngineConfigureState = struct {
+    platform_sources: std.ArrayList([]const u8),
 };
 
 pub fn engineBuild(b: *std.Build, config: EngineBuildConfiguration) !void {
