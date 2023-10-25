@@ -14,9 +14,19 @@ pub fn configure(
 fn getSourceFiles(
     b: *std.Build,
     config: interface.EngineBuildConfiguration,
-) []const []const u8 {
-    _ = config;
-    var sources = std.ArrayList([]const u8).init(b.allocator) catch @panic("OOM");
+) []std.Build.LazyPath {
+    var sources = std.ArrayList(std.Build.LazyPath).init(b.allocator) catch @panic("OOM");
+
+    const platform_apis_source_writefile_step = b.addWriteFile(
+        "register_platform_apis.gen.cpp",
+        generatePlatformApisSource(b, config),
+    );
+    sources.append(platform_apis_source_writefile_step.files.items[0].generated_file.getPath());
+
+    if (config.platform_windows) |_| {
+	    const win = @import("windows/build.zig");
+	    _ = win;
+    }
 
     return sources.toOwnedSlice();
 }
