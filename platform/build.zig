@@ -19,7 +19,7 @@ fn getSourceFiles(
 
     const platform_apis_source_writefile_step = b.addWriteFile(
         "register_platform_apis.gen.cpp",
-        generatePlatformApisSource(b, config),
+        generatePlatformApisSource(b),
     );
     sources.append(platform_apis_source_writefile_step.files.items[0].generated_file.getPath());
 
@@ -33,35 +33,17 @@ fn getSourceFiles(
 
 fn generatePlatformApisSource(
     b: *std.Build,
-    config: interface.EngineBuildConfiguration,
 ) ![]const u8 {
     var source = try std.ArrayList(u8).init(b.allocator);
 
     var platform_names = try std.ArrayList([]const u8).init(b.allocator);
     defer platform_names.deinit();
 
-    // find all struct fields prefixed with platform_ in the EngineBuildConfiguration.
-    // add the stuff afterwards (for example "windows" in platform_windows) to the list
-    // of platform names
-    const platform_prefix = "platform_";
-    for (@typeInfo(interface.EngineBuildConfiguration).Struct.fields) |field| {
-        // make sure the field is optional
-        if (@typeInfo(field.type) != .Optional) continue;
-        // make sure the field name is long enough to even contain the prefix
-        if (field.name.len < platform_prefix.len) continue;
-        // if the optional contains nothing, its probably a platform thats not enabled
-        @field(config, field.name) orelse continue;
-        if (std.mem.eql(u8, field.name[0..platform_prefix.len], platform_prefix)) {
-            const platform_name = field.name[platform_prefix.len..];
-            if (platform_name.len <= 0) {
-                std.log.err("Invalid platform name {s}", .{field.name});
-                @panic("Invalid empty platform name.");
-            }
-            try platform_names.append(platform_name);
-        }
+    for (@typeInfo(interface.EngineBuildConfiguration.EnginePlatformSpecificOptions).Union.fields) |field| {
+        try platform_names.append(field.name);
     }
 
-    if (platform_names.len == 0) @panic("No platforms enabled.");
+    if (platform_names.len == 0) @panic("No platforms?");
 
     try source.appendSlice("#include \"platforms/register_platform_apis.h\"\n");
 
