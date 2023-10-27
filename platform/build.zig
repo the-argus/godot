@@ -24,8 +24,8 @@ fn getSourceFiles(
     sources.append(platform_apis_source_writefile_step.files.items[0].generated_file.getPath());
 
     if (config.platform_windows) |_| {
-	    const win = @import("windows/build.zig");
-	    _ = win;
+        const win = @import("windows/build.zig");
+        _ = win;
     }
 
     return sources.toOwnedSlice();
