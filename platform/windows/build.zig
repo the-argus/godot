@@ -25,45 +25,45 @@ const STACK_SIZE = "8388608";
 pub fn configure(
     b: *std.Build,
     config: *interface.EngineBuildConfiguration,
-) void {
+) !void {
     if (config.platform_windows == null) @panic("Attempted to build for windows but no configuration provided.");
 
-    var flags = std.ArrayList([]const u8).init(b.allocator);
-    var linkflags = std.ArrayList([]const u8).init(b.allocator);
+    var flags = try std.ArrayList([]const u8).init(b.allocator);
+    var linkflags = try std.ArrayList([]const u8).init(b.allocator);
     defer linkflags.deinit();
     defer flags.deinit();
 
     if (config.engine_target == .TemplateRelease) {
-        flags.append("-msse2") catch @panic("OOM");
+        try flags.append("-msse2");
     } else if (config.dev_build) {
-        flags.appendSlice(&.{ "-Wa", "-mbig-obj" }) catch @panic("OOM");
+        try flags.appendSlice(&.{ "-Wa", "-mbig-obj" });
     }
 
     switch (config.platform_windows.?.subsystem) {
         .Gui => {
-            linkflags.appendSlice(&.{ "--subsystem", "windows" }) catch @panic("OOM");
+            try linkflags.appendSlice(&.{ "--subsystem", "windows" });
         },
         .Console => {
-            linkflags.appendSlice(&.{ "--subsystem", "console" }) catch @panic("OOM");
-            flags.append("-DWINDOWS_SUBSYSTEM_CONSOLE") catch @panic("OOM");
+            try linkflags.appendSlice(&.{ "--subsystem", "console" });
+            try flags.append("-DWINDOWS_SUBSYSTEM_CONSOLE");
         },
     }
 
-    linkflags.appendSlice(&.{ "--stack", STACK_SIZE }) catch @panic("OOM");
+    try linkflags.appendSlice(&.{ "--stack", STACK_SIZE });
 
     const winver_flag = std.fmt.allocPrint(b.allocator, "-DWINVER={any}", .{});
     const winnt_flag = std.fmt.allocPrint(b.allocator, "_WIN32_WINNT={any}", .{});
     std.log.debug("winver flag: {s}", .{winver_flag});
     std.log.debug("winnt flag: {s}", .{winnt_flag});
 
-    flags.appendSlice(&.{
+    try flags.appendSlice(&.{
         "-mwindows",
         "-DWINDOWS_ENABLED",
         "-DWASAPI_ENABLED",
         "-DWINMIDI_ENABLED",
         winver_flag,
         winnt_flag,
-    }) catch @panic("OOM");
+    });
 
     const initial_libs = &.{
         // "mingw32",
@@ -91,35 +91,33 @@ pub fn configure(
         "dwrite",
         "wbemuuid",
     };
-    const libs = std.ArrayList([]const u8).init(b.allocator) catch @panic("OOM");
+    const libs = try std.ArrayList([]const u8).init(b.allocator);
     defer libs.deinit();
 
-    libs.appendSlice(initial_libs) catch @panic("OOM");
+    try libs.appendSlice(initial_libs);
 
     if (config.debugging_features) {
-        libs.appendSlice(&.{ "psapi", "dbghelp" }) catch @panic("OOM");
+        try libs.appendSlice(&.{ "psapi", "dbghelp" });
     }
 
     if (config.vulkan) {
-        flags.append("-DVULKAN_ENABLED") catch @panic("OOM");
+        try flags.append("-DVULKAN_ENABLED");
         if (!config.use_volk) {
-            libs.append("vulkan") catch @panic("OOM");
+            try libs.append("vulkan");
         }
     }
 
     if (config.opengl3) {
-        flags.append("-DGLES3_ENABLED") catch @panic("OOM");
-        libs.append("opengl32") catch @panic("OOM");
+        try flags.append("-DGLES3_ENABLED");
+        try libs.append("opengl32");
     }
 
     var windows = b.addExecutable(.{
         .optimize = config.getZigOptimizeMode(),
-        .target = config.platform_windows.?.target,
-        .app_name = "godot",
+        .target = config.zig_target,
+        .app_name = config.getExecutableName(),
     });
 
-    defer flags.deinit();
-    defer linkflags.deinit();
     const allflags = interface.combineFlags(b.allocator, config.universal_flags, flags.items, linkflags.items);
 
     windows.addCSourceFiles(common_win, allflags);

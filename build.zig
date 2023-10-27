@@ -2,9 +2,8 @@ const std = @import("std");
 const zcc = @import("compile_commands");
 const interface = @import("build_interface.zig");
 
-pub fn build(b: *std.Build) !void {
+pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
-    _ = target;
     const mode = b.standardOptimizeOption(.{});
 
     const dev_build = b.option(
@@ -24,7 +23,14 @@ pub fn build(b: *std.Build) !void {
         "engine_optimize",
         "Optimization mode which can be more specific than the Debug/ReleaseSmall/ReleaseFast offered by Zig.",
     );
-    const engine_optimize = try interface.resolveEngineOptimizeMode(mode, engine_optimize_opt);
+
+    const engine_optimize = interface.resolveEngineOptimizeMode(mode, engine_optimize_opt) catch |err| {
+        std.log.err(
+            "Failed to resolve differences between the zig optimize mode {any} and the engine_optimize mode {any}:",
+            .{ mode, engine_optimize_opt },
+        );
+        @panic(err);
+    };
 
     const werror = b.option(
         bool,
@@ -53,7 +59,7 @@ pub fn build(b: *std.Build) !void {
     const dynflags = std.ArrayList([]const u8).init(b.allocator);
 
     if (debugging_symbols) {
-        dynflags.append("-gdward-4") catch @panic("OOM");
+        dynflags.append("-gdwarf-4") catch @panic("OOM");
         dynflags.append(if (dev_build) "-g3" else "-g2") catch @panic("OOM");
     } else {
         dynflags.append("-Wl,-s") catch @panic("OOM");
@@ -105,30 +111,18 @@ pub fn build(b: *std.Build) !void {
 
     if (werror) dynflags.append("-Werror") catch @panic("OOM");
 
-    // if hasattr(detect, "get_program_suffix"):
-    //     suffix = "." + detect.get_program_suffix()
-    // else:
-    //     suffix = "." + selected_platform
-
-    // suffix += "." + env["target"]
-    // if env.dev_build:
-    //     suffix += ".dev"
-
-    // if env_base["precision"] == "double":
-    //     suffix += ".double"
-
-    // suffix += "." + env["arch"]
-    // suffix += env.extra_suffix
-
     const config = interface.EngineBuildConfiguration{
+        .target = target,
         .universal_flags = dynflags.toOwnedSlice(),
         .disable_exceptions = disable_exceptions,
         .warning_mode = warning_mode,
         .engine_optimize = engine_optimize,
         .dev_build = dev_build,
     };
-    try interface.engineBuild(b, config);
 
-    var targets = std.ArrayList(*std.Build.CompileStep).init(b.allocator);
-    zcc.createStep(b, "cdb", try targets.toOwnedSlice());
+    const targets = interface.engineBuild(b, config) catch |err| {
+        @panic(err);
+    };
+
+    zcc.createStep(b, "cdb", targets);
 }

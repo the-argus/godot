@@ -69,32 +69,26 @@ pub const EngineBuildConfiguration = struct {
     builtin_zlib: bool,
     builtin_zstd: bool,
 
-    // platform options
-    // NOTE: these MUST start with platform_. to add new platforms, use the same
-    // format.
-    platform_windows: ?EngineBuildConfigurationWindows,
-    platform_web: ?EngineBuildConfigurationWeb,
-    platform_uwp: ?EngineBuildConfigurationUWP,
-    platform_macos: ?EngineBuildConfigurationMacOS,
-    platform_linuxbsd: ?EngineBuildConfigurationLinuxBSD,
-    platform_ios: ?EngineBuildConfigurationIOS,
-    platform_android: ?EngineBuildConfigurationAndroid,
+    zig_target: std.zig.CrossTarget,
+    platform: EnginePlatformSpecificOptions,
 
-    pub const EnginebuildConfigurationUniversal = struct {
-        target: std.zig.CrossTarget,
-        flags: []const []const u8,
-        linkflags: []const []const u8,
+    pub const EnginePlatformSpecificOptions = union(enum) {
+        windows: EngineBuildConfigurationWindows,
+        web: EngineBuildConfigurationWeb,
+        uwp: EngineBuildConfigurationUWP,
+        macos: EngineBuildConfigurationMacOS,
+        linuxbsd: EngineBuildConfigurationLinuxBSD,
+        ios: EngineBuildConfigurationIOS,
+        android: EngineBuildConfigurationAndroid,
     };
 
     pub const EngineBuildConfigurationWindows = struct {
         pub const Subsystem = enum { Gui, Console };
-        universal: EnginebuildConfigurationUniversal,
         subsystem: Subsystem,
         use_asan: bool,
     };
 
     pub const EngineBuildConfigurationWeb = struct {
-        universal: EnginebuildConfigurationUniversal,
         initial_memory: u64, // 32 by default
         use_assertions: bool,
         use_ubsan: bool,
@@ -105,12 +99,9 @@ pub const EngineBuildConfiguration = struct {
         use_closure_compiler: bool,
     };
 
-    pub const EngineBuildConfigurationUWP = struct {
-        universal: EnginebuildConfigurationUniversal,
-    };
+    pub const EngineBuildConfigurationUWP = struct {};
 
     pub const EngineBuildConfigurationMacOS = struct {
-        universal: EnginebuildConfigurationUniversal,
         osxcross_sdk: []const u8, // default "darwin16"
         macos_sdk_path: ?[]const u8,
         vulkan_sdk_path: ?[]const u8,
@@ -121,7 +112,6 @@ pub const EngineBuildConfiguration = struct {
     };
 
     pub const EngineBuildConfigurationLinuxBSD = struct {
-        universal: EnginebuildConfigurationUniversal,
         use_coverage: bool,
         use_ubsan: bool,
         use_asan: bool,
@@ -140,7 +130,6 @@ pub const EngineBuildConfiguration = struct {
     };
 
     pub const EngineBuildConfigurationIOS = struct {
-        universal: EnginebuildConfigurationUniversal,
         ios_toolchain_path: []const u8, // default is "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain"
         ios_sdk_path: ?[]const u8,
         ios_triple: ?[]const u8,
@@ -148,7 +137,6 @@ pub const EngineBuildConfiguration = struct {
     };
 
     pub const EngineBuildConfigurationAndroid = struct {
-        universal: EnginebuildConfigurationUniversal,
         android_sdk_root: []const u8,
         ndk_platform: []const u8,
         store_release: bool,
@@ -170,10 +158,13 @@ pub const EngineBuildConfiguration = struct {
         Extra,
     };
 
+    /// What the purpose of the build is
+    /// lowercase formatting because @tagName is used on it for the name of the
+    /// executable
     pub const EngineTarget = enum {
-        Editor,
-        TemplateRelease,
-        TemplateDebug,
+        editor,
+        template_release,
+        template_debug,
     };
 
     pub const EngineFloatingPrecision = enum { Single, Double };
@@ -188,19 +179,41 @@ pub const EngineBuildConfiguration = struct {
             .None => .Debug,
         };
     }
+
+    /// What to name the executable file produced by the build
+    /// Stuff like windows.x86_64.dev.float
+    /// returns an owned slice.
+    pub fn getExecutableName(
+        self: @This(),
+        ally: std.mem.Allocator,
+        additionalSuffix: []const u8,
+    ) ![]const u8 {
+        const suffix = std.ArrayList(u8).init(ally);
+        try suffix.appendSlice("godot.");
+        try suffix.appendSlice(@tagName(self.platform));
+        try suffix.appendSlice(".");
+        try suffix.appendSlice(@tagName(self.engine_target));
+        if (self.dev_build) try suffix.appendSlice(".dev");
+        if (self.precision == .Double) try suffix.appendSlice(".double");
+        try suffix.appendSlice(".");
+        const arch = if (self.zig_target.cpu_arch) |arch| @tagName(arch) else "native";
+        try suffix.appendSlice(arch);
+        try suffix.appendSlice(".");
+        try suffix.appendSlice(additionalSuffix);
+        return try suffix.toOwnedSlice();
+    }
 };
 
-/// A struct containing all of the state which gets accumulated while doing the
-/// logic that figures out what flags and source files to use, etc.
-/// Basically just some lists of source files and flags.
-pub const EngineConfigureState = struct {
-    builder: *std.Build,
-    platform_sources: std.ArrayList([]const u8),
-};
+pub fn engineBuild(b: *std.Build, config: EngineBuildConfiguration) ![]*std.Build.CompileStep {
+    var compile_steps = std.ArrayList(*std.Build.CompileStep).init(b.allocator);
+    defer compile_steps.deinit();
+    switch (config.target) {
+        .windows => {
+            try compile_steps.append(@import("platform/windows/build.zig").configure(b, config));
+        },
+    }
 
-pub fn engineBuild(b: *std.Build, config: EngineBuildConfiguration) !void {
-    _ = config;
-    _ = b;
+    return try compile_steps.toOwnedSlice();
 }
 
 pub const EngineBuildOptionError = error{ConflictingEngineAndActualBuildModes};
@@ -246,19 +259,19 @@ pub fn combineFlags(
     universal_flags: []const []const u8,
     cflags: []const []const u8,
     linkflags: []const []const u8,
-) []const []const u8 {
-    var allflags = std.ArrayList([]const u8).init(ally) catch @panic("OOM");
-    allflags.appendSlice(cflags) catch @panic("OOM");
-    allflags.appendSlice(universal_flags) catch @panic("OOM");
-    const concated_linkflags = std.mem.join(
+) ![]const []const u8 {
+    var allflags = try std.ArrayList([]const u8).init(ally);
+    try allflags.appendSlice(cflags);
+    try allflags.appendSlice(universal_flags);
+    const concated_linkflags = try std.mem.join(
         ally,
         ",",
         linkflags,
-    ) catch @panic("OOM");
+    );
     defer ally.free(concated_linkflags);
 
     const huge_link_flag = std.fmt.allocPrint(ally, "-Wl,{s}", .{concated_linkflags});
-    allflags.append(huge_link_flag) catch @panic("OOM");
+    try allflags.append(huge_link_flag);
 
     return allflags.toOwnedSlice();
 }

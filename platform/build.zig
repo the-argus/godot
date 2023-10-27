@@ -14,8 +14,8 @@ pub fn configure(
 fn getSourceFiles(
     b: *std.Build,
     config: interface.EngineBuildConfiguration,
-) []std.Build.LazyPath {
-    var sources = std.ArrayList(std.Build.LazyPath).init(b.allocator) catch @panic("OOM");
+) ![]std.Build.LazyPath {
+    var sources = try std.ArrayList(std.Build.LazyPath).init(b.allocator);
 
     const platform_apis_source_writefile_step = b.addWriteFile(
         "register_platform_apis.gen.cpp",
@@ -28,16 +28,16 @@ fn getSourceFiles(
         _ = win;
     }
 
-    return sources.toOwnedSlice();
+    return try sources.toOwnedSlice();
 }
 
 fn generatePlatformApisSource(
     b: *std.Build,
     config: interface.EngineBuildConfiguration,
-) []const u8 {
-    var source = std.ArrayList(u8).init(b.allocator) catch @panic("OOM");
+) ![]const u8 {
+    var source = try std.ArrayList(u8).init(b.allocator);
 
-    var platform_names = std.ArrayList([]const u8).init(b.allocator) catch @panic("OOM");
+    var platform_names = try std.ArrayList([]const u8).init(b.allocator);
     defer platform_names.deinit();
 
     // find all struct fields prefixed with platform_ in the EngineBuildConfiguration.
@@ -57,13 +57,13 @@ fn generatePlatformApisSource(
                 std.log.err("Invalid platform name {s}", .{field.name});
                 @panic("Invalid empty platform name.");
             }
-            platform_names.append(platform_name) catch @panic("OOM");
+            try platform_names.append(platform_name);
         }
     }
 
     if (platform_names.len == 0) @panic("No platforms enabled.");
 
-    source.appendSlice("#include \"platforms/register_platform_apis.h\"\n") catch @panic("OOM");
+    try source.appendSlice("#include \"platforms/register_platform_apis.h\"\n");
 
     // add a block of lines for each of these formats. so there will be a block of
     // #include platforms/.../api.h, and then a block of register_..._api(); and
@@ -78,7 +78,7 @@ fn generatePlatformApisSource(
         for (platform_names.items) |platform_name| {
             var line = std.fmt.allocPrint(b.allocator, format, .{platform_name});
             defer b.allocator.free(line);
-            source.appendSlice(line) catch @panic("OOM");
+            try source.appendSlice(line);
         }
     }
 
