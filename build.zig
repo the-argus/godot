@@ -120,9 +120,20 @@ pub fn build(b: *std.Build) void {
         .dev_build = dev_build,
     };
 
-    const targets = interface.engineBuild(b, config) catch |err| {
-        @panic(err);
-    };
+    var targets = std.ArrayList(*std.Build.CompileStep).init(b.allocator);
 
-    zcc.createStep(b, "cdb", targets);
+    // build the engine
+    {
+        var engine = b.addExecutable(.{
+            .optimize = config.getZigOptimizeMode(),
+            .target = config.zig_target,
+            .app_name = config.getExecutableName(),
+        });
+
+        interface.engineConfigure(b, engine, config) catch |err| @panic(err);
+
+        targets.append(engine) catch @panic("OOM");
+    }
+
+    zcc.createStep(b, "cdb", targets.toOwnedSlice() catch @panic("OOM"));
 }

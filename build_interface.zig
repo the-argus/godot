@@ -72,6 +72,12 @@ pub const EngineBuildConfiguration = struct {
     zig_target: std.zig.CrossTarget,
     platform: EnginePlatformSpecificOptions,
 
+    pub const State = struct {
+        flags: std.ArrayList([]const u8) = null,
+        libs: std.ArrayList([]const u8) = null,
+        executable: *std.Build.Step.Compile,
+    };
+
     pub const EnginePlatformSpecificOptions = union(enum) {
         windows: EngineBuildConfigurationWindows,
         web: EngineBuildConfigurationWeb,
@@ -204,16 +210,33 @@ pub const EngineBuildConfiguration = struct {
     }
 };
 
-pub fn engineBuild(b: *std.Build, config: EngineBuildConfiguration) ![]*std.Build.CompileStep {
-    var compile_steps = std.ArrayList(*std.Build.CompileStep).init(b.allocator);
-    defer compile_steps.deinit();
-    switch (config.target) {
-        .windows => {
-            try compile_steps.append(@import("platform/windows/build.zig").configure(b, config));
-        },
-    }
+/// Take a fresh engine executable and add the necessary C source files, flags,
+/// and dependencies.
+pub fn engineConfigure(
+    b: *std.Build,
+    engine: *std.Build.Step.Compile,
+    config: EngineBuildConfiguration,
+) !void {
+    // stuff that each configure call will modify
+    var state = EngineBuildConfiguration.State{
+        .flags = std.ArrayList([]const u8).init(b.allocator),
+        .executable = engine,
+    };
 
-    return try compile_steps.toOwnedSlice();
+    // add flags and libs
+    switch (config.platform) {
+        .windows => {
+            try @import("platform/windows/build.zig").configure(b, config, state);
+        },
+        .web => {},
+        .uwp => {},
+        .macos => {},
+        .linuxbsd => {
+            try @import("platform/linuxbsd/build.zig").configure(b, config, state);
+        },
+        .ios => {},
+        .android => {},
+    }
 }
 
 pub const EngineBuildOptionError = error{ConflictingEngineAndActualBuildModes};
@@ -253,16 +276,15 @@ pub fn resolveEngineOptimizeMode(
     }
 }
 
-/// Returns an owned slice of all the flags this platform's engine target will need
+/// Formats linkflags and appends them to regular compiler flags. Effectively
+/// compresses the information.
 pub fn combineFlags(
     ally: std.mem.Allocator,
-    universal_flags: []const []const u8,
     cflags: []const []const u8,
     linkflags: []const []const u8,
 ) ![]const []const u8 {
     var allflags = try std.ArrayList([]const u8).init(ally);
     try allflags.appendSlice(cflags);
-    try allflags.appendSlice(universal_flags);
     const concated_linkflags = try std.mem.join(
         ally,
         ",",

@@ -22,18 +22,22 @@ const common_win_wrap = &.{
 
 const STACK_SIZE = "8388608";
 
+/// Takes the configuration and modifies engine target and adds some C sources.
+/// Also adds some flags.
 pub fn configure(
     b: *std.Build,
-    config: *interface.EngineBuildConfiguration,
+    config: interface.EngineBuildConfiguration,
+    state: *interface.EngineBuildConfiguration.State,
 ) !void {
-    if (config.platform_windows == null) @panic("Attempted to build for windows but no configuration provided.");
+    if (config.platform != .windows) @panic("Attempted to build for windows but no configuration provided.");
 
+    // figure out what flags we need for this platform
     var flags = try std.ArrayList([]const u8).init(b.allocator);
     var linkflags = try std.ArrayList([]const u8).init(b.allocator);
     defer linkflags.deinit();
     defer flags.deinit();
 
-    if (config.engine_target == .TemplateRelease) {
+    if (config.engine_target == .template_release) {
         try flags.append("-msse2");
     } else if (config.dev_build) {
         try flags.appendSlice(&.{ "-Wa", "-mbig-obj" });
@@ -65,66 +69,66 @@ pub fn configure(
         winnt_flag,
     });
 
-    const initial_libs = &.{
-        // "mingw32",
-        "dsound",
-        "ole32",
-        "d3d9",
-        "winmm",
-        "gdi32",
-        "iphlpapi",
-        "shlwapi",
-        "wsock32",
-        "ws2_32",
-        "kernel32",
-        "oleaut32",
-        "sapi",
-        "dinput8",
-        "dxguid",
-        "ksuser",
-        "imm32",
-        "bcrypt",
-        "crypt32",
-        "avrt",
-        "uuid",
-        "dwmapi",
-        "dwrite",
-        "wbemuuid",
-    };
+    // flags done, now do libs
     const libs = try std.ArrayList([]const u8).init(b.allocator);
     defer libs.deinit();
 
-    try libs.appendSlice(initial_libs);
+    {
+        const initial_libs = &.{
+            // "mingw32",
+            "dsound",
+            "ole32",
+            "d3d9",
+            "winmm",
+            "gdi32",
+            "iphlpapi",
+            "shlwapi",
+            "wsock32",
+            "ws2_32",
+            "kernel32",
+            "oleaut32",
+            "sapi",
+            "dinput8",
+            "dxguid",
+            "ksuser",
+            "imm32",
+            "bcrypt",
+            "crypt32",
+            "avrt",
+            "uuid",
+            "dwmapi",
+            "dwrite",
+            "wbemuuid",
+        };
 
-    if (config.debugging_features) {
-        try libs.appendSlice(&.{ "psapi", "dbghelp" });
-    }
+        try libs.appendSlice(initial_libs);
 
-    if (config.vulkan) {
-        try flags.append("-DVULKAN_ENABLED");
-        if (!config.use_volk) {
-            try libs.append("vulkan");
+        if (config.debugging_features) {
+            try libs.appendSlice(&.{ "psapi", "dbghelp" });
+        }
+
+        if (config.vulkan) {
+            try flags.append("-DVULKAN_ENABLED");
+            if (!config.use_volk) {
+                try libs.append("vulkan");
+            }
+        }
+
+        if (config.opengl3) {
+            try flags.append("-DGLES3_ENABLED");
+            try libs.append("opengl32");
         }
     }
 
-    if (config.opengl3) {
-        try flags.append("-DGLES3_ENABLED");
-        try libs.append("opengl32");
-    }
+    // combine all flags and libs and add the source files and the flags to the
+    // state
+    const ourflags = interface.combineFlags(b.allocator, flags.items, linkflags.items);
+    try state.flags.appendSlice(ourflags);
 
-    var windows = b.addExecutable(.{
-        .optimize = config.getZigOptimizeMode(),
-        .target = config.zig_target,
-        .app_name = config.getExecutableName(),
-    });
+    state.executable.addCSourceFiles(common_win, std.mem.join(b.allocator, &.{}, &.{ ourflags, config.universal_flags }));
 
-    const allflags = interface.combineFlags(b.allocator, config.universal_flags, flags.items, linkflags.items);
-
-    windows.addCSourceFiles(common_win, allflags);
-
-    defer libs.deinit();
     for (libs.items) |lib| {
-        windows.linkSystemLibrary(lib);
+        state.executable.linkSystemLibrary(lib);
     }
 
     std.log.warn("Windows console app wrapper not implemented, and building without a .res file", .{});
