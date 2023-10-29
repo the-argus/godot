@@ -88,6 +88,56 @@ pub const EngineBuildConfiguration = struct {
         android: EngineBuildConfigurationAndroid,
     };
 
+    pub fn useAsan(self: @This()) bool {
+        return self.checkBoolFieldInPlatform("use_asan");
+    }
+
+    pub fn useUbsan(self: @This()) bool {
+        return self.checkBoolFieldInPlatform("use_ubsan");
+    }
+
+    pub fn useLsan(self: @This()) bool {
+        return self.checkBoolFieldInPlatform("use_lsan");
+    }
+
+    pub fn useTsan(self: @This()) bool {
+        return self.checkBoolFieldInPlatform("use_tsan");
+    }
+
+    pub fn useMsan(self: @This()) bool {
+        return self.checkBoolFieldInPlatform("use_msan");
+    }
+
+    fn checkBoolFieldInPlatform(self: @This(), comptime fieldname: []u8) bool {
+        return switch (self.platform) {
+            .windows => |c| checkBoolFieldIfPresent(fieldname, c),
+            .web => |c| checkBoolFieldIfPresent(fieldname, c),
+            .uwp => |c| checkBoolFieldIfPresent(fieldname, c),
+            .macos => |c| checkBoolFieldIfPresent(fieldname, c),
+            .linuxbsd => |c| checkBoolFieldIfPresent(fieldname, c),
+            .ios => |c| checkBoolFieldIfPresent(fieldname, c),
+            .android => |c| checkBoolFieldIfPresent(fieldname, c),
+        };
+    }
+
+    /// Utility function for doing things like checking if a given platform
+    /// configuration contains a field called "used_asan" and if its true or not
+    fn checkBoolFieldIfPresent(
+        comptime fieldname: []u8,
+        platform_config: anytype,
+    ) bool {
+        inline for (@typeInfo(@TypeOf(platform_config)).Struct.fields) |field| {
+            if (std.mem.eql(u8, field.name, fieldname)) {
+                if (field.type != bool) {
+                    @compileLog("WARNING: checkBoolFieldIfPresent found field with expected name but it is not bool");
+                    return false;
+                }
+                return @field(platform_config, field.name);
+            }
+        }
+        return false;
+    }
+
     pub const EngineBuildConfigurationWindows = struct {
         pub const Subsystem = enum { Gui, Console };
         subsystem: Subsystem,
