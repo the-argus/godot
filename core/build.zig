@@ -23,10 +23,8 @@ pub fn configure(
     defer sources.deinit();
     defer flags.deinit();
 
-    const key_source_filepath = b.cache_root.join(b.allocator, &.{"script_encryption_key.gen.cpp"});
-    const gen_key_source = b.addWriteFile(key_source_filepath, try genKeySourceFileContents(b.allocator));
-    state.executable.step.dependOn(gen_key_source.step);
-    try sources.append(key_source_filepath);
+    const key_source_file = dependOnGeneratedFile(b, state.executable.step, "script_encryption_key.gen.cpp", try genKeySourceFileContents(b.allocator));
+    try sources.append(key_source_file);
 
     // grab miscellaneous third party single-source-file dependencies
     {
@@ -148,29 +146,58 @@ pub fn configure(
     }
 
     try sources.appendSlice(core_sources);
+
+    const version_source_file = dependOnGeneratedFile(b, state.executable.step, "version_hash.gen.cpp", try genVersionGeneratedHeaderContents(b.allocator));
+    try sources.append(version_source_file);
+}
+
+/// Returns the path to the generated file
+fn dependOnGeneratedFile(
+    b: *std.Build,
+    step: *std.Build.Step,
+    filename: []const u8,
+    contents: []const u8,
+) ![]const u8 {
+    const filepath = b.cache_root.join(b.allocator, &.{filename});
+    const sourcefile = b.addWriteFile(filepath, contents);
+    step.dependOn(sourcefile.step);
+    return filepath;
 }
 
 fn genVersionGeneratedHeaderContents(ally: std.mem.Allocator) void {
+    const vinfo = @import("../version.zig");
     const formatstring =
         \\/* THIS FILE IS GENERATED DO NOT EDIT */
         \\#ifndef VERSION_GENERATED_GEN_H
         \\#define VERSION_GENERATED_GEN_H
-        \\#define VERSION_SHORT_NAME "{short_name}"
-        \\#define VERSION_NAME "{name}"
-        \\#define VERSION_MAJOR {major}
-        \\#define VERSION_MINOR {minor}
-        \\#define VERSION_PATCH {patch}
-        \\#define VERSION_STATUS "{status}"
+        \\#define VERSION_SHORT_NAME "{s}"
+        \\#define VERSION_NAME "{s}"
+        \\#define VERSION_MAJOR {any}
+        \\#define VERSION_MINOR {any}
+        \\#define VERSION_PATCH {any}
+        \\#define VERSION_STATUS "{s}"
         \\#define VERSION_BUILD "{build}"
-        \\#define VERSION_MODULE_CONFIG "{module_config}"
-        \\#define VERSION_YEAR {year}
-        \\#define VERSION_WEBSITE "{website}"
-        \\#define VERSION_DOCS_BRANCH "{docs_branch}"
+        \\#define VERSION_MODULE_CONFIG "{s}"
+        \\#define VERSION_YEAR {any}
+        \\#define VERSION_WEBSITE "{s}"
+        \\#define VERSION_DOCS_BRANCH "{s}"
         \\#define VERSION_DOCS_URL "https://docs.godotengine.org/en/" VERSION_DOCS_BRANCH
         \\#endif // VERSION_GENERATED_GEN_H
     ;
 
-    std.fmt.allocPrint(ally, formatstring, .{});
+    return try std.fmt.allocPrint(ally, formatstring, .{
+        vinfo.short_name,
+        vinfo.name,
+        vinfo.major,
+        vinfo.minor,
+        vinfo.patch,
+        vinfo.status,
+        // build?
+        vinfo.module_config,
+        vinfo.year,
+        vinfo.website,
+        vinfo.docs,
+    });
 }
 
 fn genKeySourceFileContents(ally: std.mem.Allocator) ![]const u8 {

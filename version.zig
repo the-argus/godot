@@ -1,0 +1,10 @@
+pub const short_name = "godot";
+pub const name = "Godot Engine";
+pub const major = 4;
+pub const minor = 1;
+pub const patch = 2;
+pub const status = "stable";
+pub const module_config = "";
+pub const year = 2023;
+pub const website = "https://godotengine.org";
+pub const docs = "4.1";
