@@ -23,8 +23,13 @@ pub fn configure(
     defer sources.deinit();
     defer flags.deinit();
 
-    const key_source_file = dependOnGeneratedFile(b, state.executable.step, "script_encryption_key.gen.cpp", try genKeySourceFileContents(b.allocator));
-    try sources.append(key_source_file);
+    // add a generated source file: the encryption key #define
+    try sources.append(dependOnGeneratedFile(
+        b,
+        state.executable.step,
+        "script_encryption_key.gen.cpp",
+        try genKeySourceFileContents(b.allocator),
+    ));
 
     // grab miscellaneous third party single-source-file dependencies
     {
@@ -147,8 +152,13 @@ pub fn configure(
 
     try sources.appendSlice(core_sources);
 
-    const version_source_file = dependOnGeneratedFile(b, state.executable.step, "version_hash.gen.cpp", try genVersionGeneratedHeaderContents(b.allocator));
-    try sources.append(version_source_file);
+    // depend on a source file containing #defines for version information
+    try sources.append(dependOnGeneratedFile(
+        b,
+        state.executable.step,
+        "version_hash.gen.cpp",
+        try genVersionGeneratedHeaderContents(b.allocator),
+    ));
 }
 
 /// Returns the path to the generated file
@@ -166,6 +176,17 @@ fn dependOnGeneratedFile(
 
 fn genVersionGeneratedHeaderContents(ally: std.mem.Allocator) void {
     const vinfo = @import("../version.zig");
+
+    const build_name = block: {
+        var envmap = std.process.getEnvMap(ally);
+        defer envmap.deinit();
+        if (envmap.get("BUILD_NAME")) |name| {
+            std.log.info("Using custom build name: {s}", .{name});
+            break :block ally.dupe(name);
+        }
+        break :block "custom_build";
+    };
+
     const formatstring =
         \\/* THIS FILE IS GENERATED DO NOT EDIT */
         \\#ifndef VERSION_GENERATED_GEN_H
@@ -192,7 +213,7 @@ fn genVersionGeneratedHeaderContents(ally: std.mem.Allocator) void {
         vinfo.minor,
         vinfo.patch,
         vinfo.status,
-        // build?
+        build_name,
         vinfo.module_config,
         vinfo.year,
         vinfo.website,
@@ -225,7 +246,7 @@ fn genKeySourceFileContents(ally: std.mem.Allocator) ![]const u8 {
                 };
 
                 // its valid, go ahead and append it
-                formattedkey.appendSlice(try txts.toOwnedSlice());
+                try formattedkey.appendSlice(try txts.toOwnedSlice());
             }
 
             break :block try formattedkey.toOwnedSlice();
@@ -241,5 +262,22 @@ fn genKeySourceFileContents(ally: std.mem.Allocator) ![]const u8 {
         @panic("Invalid encryption key.");
     }
 
-    return std.fmt.allocPrint(ally, "#include \"core/config/project_settings.h\"\nuint8_t script_encryption_key[32]={{s}};\n", &.{key});
+    return try std.fmt.allocPrint(ally, "#include \"core/config/project_settings.h\"\nuint8_t script_encryption_key[32]={{s}};\n", &.{key});
+}
+
+fn getCertsHeaderGeneratedContents(ally: std.mem.Allocator, cert_file_relpath: []const u8, generated_outpath: []const u8) ![]const u8 {
+    _ = generated_outpath;
+    _ = ally;
+    // open cert readonly
+    const certfile = std.fs.cwd().openFile(cert_file_relpath, .{}) catch |err| {
+        std.log.err("Failed to open cert file {s}, got {any}", .{ cert_file_relpath, err });
+        @panic(err);
+    };
+    _ = certfile;
+    // buf = f.read()
+    // decomp_size = len(buf)
+
+    // # Use maximum zlib compression level to further reduce file size
+    // # (at the cost of initial build times).
+    // buf = zlib.compress(buf, zlib.Z_BEST_COMPRESSION)
 }
