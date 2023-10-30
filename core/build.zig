@@ -2,6 +2,17 @@ const std = @import("std");
 
 const interface = @import("../build_interface.zig");
 
+const here = "core/";
+
+const core_sources = &.{
+    here ++ "core_bind.cpp",
+    here ++ "core_constants.cpp",
+    here ++ "core_globals.cpp",
+    here ++ "core_string_names.cpp",
+    here ++ "doc_data.cpp",
+    here ++ "register_core_types.cpp",
+};
+
 pub fn configure(
     b: *std.Build,
     config: interface.EngineBuildConfiguration,
@@ -135,6 +146,31 @@ pub fn configure(
         // flags only needed by the zstd sources
         try flags.append(try std.fmt.allocPrint(b.allocator, "-I{s}", .{zstd_dir ++ "common/"}));
     }
+
+    try sources.appendSlice(core_sources);
+}
+
+fn genVersionGeneratedHeaderContents(ally: std.mem.Allocator) void {
+    const formatstring =
+        \\/* THIS FILE IS GENERATED DO NOT EDIT */
+        \\#ifndef VERSION_GENERATED_GEN_H
+        \\#define VERSION_GENERATED_GEN_H
+        \\#define VERSION_SHORT_NAME "{short_name}"
+        \\#define VERSION_NAME "{name}"
+        \\#define VERSION_MAJOR {major}
+        \\#define VERSION_MINOR {minor}
+        \\#define VERSION_PATCH {patch}
+        \\#define VERSION_STATUS "{status}"
+        \\#define VERSION_BUILD "{build}"
+        \\#define VERSION_MODULE_CONFIG "{module_config}"
+        \\#define VERSION_YEAR {year}
+        \\#define VERSION_WEBSITE "{website}"
+        \\#define VERSION_DOCS_BRANCH "{docs_branch}"
+        \\#define VERSION_DOCS_URL "https://docs.godotengine.org/en/" VERSION_DOCS_BRANCH
+        \\#endif // VERSION_GENERATED_GEN_H
+    ;
+
+    std.fmt.allocPrint(ally, formatstring, .{});
 }
 
 fn genKeySourceFileContents(ally: std.mem.Allocator) ![]const u8 {
