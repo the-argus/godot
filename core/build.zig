@@ -267,13 +267,31 @@ fn genKeySourceFileContents(ally: std.mem.Allocator) ![]const u8 {
 
 fn getCertsHeaderGeneratedContents(ally: std.mem.Allocator, cert_file_relpath: []const u8, generated_outpath: []const u8) ![]const u8 {
     _ = generated_outpath;
-    _ = ally;
     // open cert readonly
     const certfile = std.fs.cwd().openFile(cert_file_relpath, .{}) catch |err| {
         std.log.err("Failed to open cert file {s}, got {any}", .{ cert_file_relpath, err });
         @panic(err);
     };
-    _ = certfile;
+    const cert = certfile.readToEndAlloc(ally, 300_000) catch |err| {
+        if (err == .FileTooBig) {
+            @panic("Cert file too large to read into memory.");
+        }
+        return err;
+    };
+    defer ally.free(cert);
+
+    var compressed_cert_buffer = std.ArrayList(u8).init(ally);
+    defer compressed_cert_buffer.deinit();
+    {
+        var compress_stream = std.compress.zlib.compressStream(ally, compressed_cert_buffer.writer(), .{ .level = .maximum });
+        defer compress_stream.deinit();
+
+        compress_stream.write(cert);
+        compress_stream.finish();
+    }
+    const compressed_cert = compressed_cert_buffer.items;
+    _ = compressed_cert;
+
     // buf = f.read()
     // decomp_size = len(buf)
 
