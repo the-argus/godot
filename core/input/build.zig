@@ -1,13 +1,13 @@
 const std = @import("std");
 const interface = @import("../../build_interface.zig");
 
-const here = "core/crypto/";
+const here = "core/input/";
 
 const sources = &.{
-    here ++ "aes_context.cpp",
-    here ++ "crypto.cpp",
-    here ++ "crypto_core.cpp",
-    here ++ "hashing_context.cpp",
+    here ++ "input.cpp",
+    here ++ "input_event.cpp",
+    here ++ "input_map.cpp",
+    here ++ "shortcut.cpp",
 };
 
 pub fn configure(

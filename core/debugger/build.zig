@@ -1,13 +1,16 @@
 const std = @import("std");
 const interface = @import("../../build_interface.zig");
 
-const here = "core/crypto/";
+const here = "core/debugger/";
 
 const sources = &.{
-    here ++ "aes_context.cpp",
-    here ++ "crypto.cpp",
-    here ++ "crypto_core.cpp",
-    here ++ "hashing_context.cpp",
+    here ++ "debugger_marshalls.cpp",
+    here ++ "engine_debugger.cpp",
+    here ++ "engine_profiler.cpp",
+    here ++ "local_debugger.cpp",
+    here ++ "remote_debugger.cpp",
+    here ++ "remote_debugger_peer.cpp",
+    here ++ "script_debugger.cpp",
 };
 
 pub fn configure(
