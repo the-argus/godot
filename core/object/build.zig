@@ -57,13 +57,12 @@ fn generateVersionOfVirtuals(ally: std.mem.Allocator, config: VirtualsVersionCon
     var method_info = std.ArrayList(u8).init(ally);
     defer method_info.deinit();
 
-    const RET = if (config.returns) "m_ret, " else "";
-    _ = RET;
+    var replacements: ProtoReplacementFields = .{};
+
+    replacements.ret = if (config.returns) "m_ret, " else "";
     // If required, may lead to uninitialized errors
-    const RVOID = if (config.returns) "(void)r_ret;" else "";
-    _ = RVOID;
-    const CALLPTRRETDEF = if (config.returns) "PtrToArg<m_ret>::EncodeT ret;" else "";
-    _ = CALLPTRRETDEF;
+    replacements.rvoid = if (config.returns) "(void)r_ret;" else "";
+    replacements.callptrretdef = if (config.returns) "PtrToArg<m_ret>::EncodeT ret;" else "";
 
     if (config.returns) {
         try method_info.appendSlice(
@@ -72,16 +71,14 @@ fn generateVersionOfVirtuals(ally: std.mem.Allocator, config: VirtualsVersionCon
         );
     }
 
-    const CONST = if (config.constant) "const" else "";
-    _ = CONST;
+    replacements.@"const" = if (config.constant) "const" else "";
 
     if (config.constant)
         try method_info.appendSlice(
             \\	method_info.flags|=METHOD_FLAG_CONST;
         );
 
-    const VER = try config.toString(ally);
-    _ = VER;
+    replacements.ver = try config.toString(ally);
 
     var argtext = std.ArrayList(u8).init(ally);
     var callargtext = std.ArrayList(u8).init(ally);
@@ -89,9 +86,6 @@ fn generateVersionOfVirtuals(ally: std.mem.Allocator, config: VirtualsVersionCon
     var callsiargptrs = std.ArrayList(u8).init(ally);
     var callptrargsptr = std.ArrayList(u8).init(ally);
     var callptrargs = std.ArrayList(u8).init(ally);
-
-    const argcount_string = config.argcountString(ally);
-    defer ally.free(argcount_string);
 
     defer {
         argtext.deinit();
@@ -101,6 +95,9 @@ fn generateVersionOfVirtuals(ally: std.mem.Allocator, config: VirtualsVersionCon
         callptrargsptr.deinit();
         callptrargs.deinit();
     }
+
+    const argcount_string = config.argcountString(ally);
+    defer ally.free(argcount_string);
 
     // zig really needs a string type in the stdlib
     if (config.argcount > 0) {
@@ -122,64 +119,104 @@ fn generateVersionOfVirtuals(ally: std.mem.Allocator, config: VirtualsVersionCon
             try callptrargs.appendSlice("\t\t");
         }
 
-        try argtext.appendSlice("");
+        const iplusone = try std.fmt.allocPrint(ally, "{any}", .{index + 1});
+        defer ally.free(iplusone);
+        const index_string = try std.fmt.allocPrint(ally, "{any}", .{index});
+        defer ally.free(index_string);
+
+        const formatted_text_1 = try std.fmt.allocPrint(ally, "m_type{s}", .{iplusone});
+        defer ally.free(formatted_text_1);
+        const formatted_text_2 = try std.fmt.allocPrint(ally, "m_type{s} arg{s}", .{ iplusone, iplusone });
+        defer ally.free(formatted_text_2);
+        const formatted_text_3 = try std.fmt.allocPrint(ally, "Variant(arg{s})", .{iplusone});
+        defer ally.free(formatted_text_3);
+        const formatted_text_4 = try std.fmt.allocPrint(ally, "&vargs[{s}]", .{index_string});
+        defer ally.free(formatted_text_4);
+        const formatted_text_5 = try std.fmt.allocPrint(ally, "PtrToArg<m_type{s}>::EncodeT argval{s} = arg{s};\n", .{ iplusone, iplusone, iplusone });
+        defer ally.free(formatted_text_5);
+        const formatted_text_6 = try std.fmt.allocPrint(ally, "&argval{s}", .{iplusone});
+        defer ally.free(formatted_text_6);
+
+        const formatted_text_method_info = try std.fmt.allocPrint(ally,
+            \\	method_info.arguments.push_back(GetTypeInfo<m_type{s}>::get_class_info());
+            \\	method_info.arguments_metadata.push_back(GetTypeInfo<m_type{s}>::METADATA);
+            \\
+        , .{ iplusone, iplusone });
+        defer ally.free(formatted_text_method_info);
+
+        try argtext.appendSlice(formatted_text_1);
+        try callargtext.appendSlice(formatted_text_2);
+        try callsiargs.appendSlice(formatted_text_3);
+        try callsiargptrs.appendSlice(formatted_text_4);
+        try callptrargs.appendSlice(formatted_text_5);
+        try callptrargsptr.appendSlice(formatted_text_6);
+
+        try method_info.appendSlice(formatted_text_method_info);
     }
 
-    // for i in range(argcount):
-    //     if i > 0:
-    //         argtext += ", "
-    //         callargtext += ", "
-    //         callsiargs += ", "
-    //         callsiargptrs += ", "
-    //         callptrargs += "\t\t"
-    //         callptrargsptr += ", "
-    //     argtext += "m_type" + str(i + 1)
-    //     callargtext += "m_type" + str(i + 1) + " arg" + str(i + 1)
-    //     callsiargs += "Variant(arg" + str(i + 1) + ")"
-    //     callsiargptrs += "&vargs[" + str(i) + "]"
-    //     callptrargs += (
-    //         "PtrToArg<m_type" + str(i + 1) + ">::EncodeT argval" + str(i + 1) + " = arg" + str(i + 1) + ";\\\n"
-    //     )
-    //     callptrargsptr += "&argval" + str(i + 1)
-    //     method_info += "\tmethod_info.arguments.push_back(GetTypeInfo<m_type" + str(i + 1) + ">::get_class_info());\\\n"
-    //     method_info += (
-    //         "\tmethod_info.arguments_metadata.push_back(GetTypeInfo<m_type" + str(i + 1) + ">::METADATA);\\\n"
-    //     )
+    if (config.argcount > 0) {
+        for (&.{ callsiargs, callsiargptrs, callptrargsptr }) |string| {
+            try string.appendSlice("};\n");
+        }
 
-    // if argcount:
-    //     callsiargs += "};\\\n"
-    //     callsiargptrs += "};\\\n"
-    //     s = s.replace("$CALLSIARGS", callsiargs + callsiargptrs)
-    //     s = s.replace("$CALLSIARGPASS", "(const Variant **)vargptrs," + str(argcount))
-    //     callptrargsptr += "};\\\n"
-    //     s = s.replace("$CALLPTRARGS", callptrargs + callptrargsptr)
-    //     s = s.replace("$CALLPTRARGPASS", "reinterpret_cast<GDExtensionConstTypePtr*>(argptrs)")
-    // else:
-    //     s = s.replace("$CALLSIARGS", "")
-    //     s = s.replace("$CALLSIARGPASS", "nullptr, 0")
-    //     s = s.replace("$CALLPTRARGS", "")
-    //     s = s.replace("$CALLPTRARGPASS", "nullptr")
+        try callsiargs.appendSlice(callsiargptrs.items);
+        try callptrargs.appendSlice(callptrargsptr.items);
+    }
 
-    // if returns:
-    //     if argcount > 0:
-    //         callargtext += ","
-    //     callargtext += " m_ret& r_ret"
-    //     s = s.replace("$CALLSIBEGIN", "Variant ret = ")
-    //     s = s.replace("$CALLSIRET", "r_ret = VariantCaster<m_ret>::cast(ret);")
-    //     s = s.replace("$CALLPTRRETPASS", "&ret")
-    //     s = s.replace("$CALLPTRRET", "r_ret = (m_ret)ret;")
-    // else:
-    //     s = s.replace("$CALLSIBEGIN", "")
-    //     s = s.replace("$CALLSIRET", "")
-    //     s = s.replace("$CALLPTRRETPASS", "nullptr")
-    //     s = s.replace("$CALLPTRRET", "")
+    replacements.callsiargs = if (config.argcout > 0) callsiargs.items else "";
+    const maybe_callsiargpass = try std.fmt.allocPrint(ally, "(const Variant **)vargptrs,{s}", .{argcount_string});
+    defer ally.free(maybe_callsiargpass);
+    replacements.callsiargpass = if (config.argcout > 0) maybe_callsiargpass else "nullptr, 0";
+    replacements.callptrargs = if (config.argcout > 0) callptrargs.items else "";
+    replacements.callptrargpass = if (config.argcout > 0) "reinterpret_cast<GDExtensionConstTypePtr*>(argptrs)" else "nullptr";
 
-    // s = s.replace("$ARG", argtext)
-    // s = s.replace("$CALLARGS", callargtext)
-    // s = s.replace("$FILL_METHOD_INFO", method_info)
+    if (config.returns) {
+        if (config.argcount > 0) try callargtext.appendSlice(",");
+        try callargtext.appendSlice(" m_ret& r_ret");
+    }
+    replacements.callsibegin = if (config.returns) "Variant ret = " else "";
+    replacements.callsiret = if (config.returns) "r_ret = VariantCaster<m_ret>::cast(ret);" else "";
+    replacements.callptrretpass = if (config.returns) "&ret" else "nullptr";
+    replacements.callptrret = if (config.returns) "r_ret = (m_ret)ret;" else "";
 
-    // return s
+    replacements.arg = argtext.items;
+    replacements.callargs = callargtext.items;
+    replacements.fill_method_info = method_info.items;
+
+    var string_buffer_ping: [256]u8 = undefined;
+    var string_buffer_pong: [256]u8 = undefined;
+    var buffer = ally.alloc(u8, proto.len);
+    @memcpy(buffer, proto);
+
+    for (@typeInfo(@TypeOf(replacements)).Struct.fields) |field| {
+        const uppercase = std.ascii.upperString(string_buffer_ping, field.name);
+        const iden = std.fmt.bufPrint(string_buffer_pong, "${s}", .{uppercase}) catch @panic("unable to do string formatting with buffer allocation");
+        const space_needed = std.mem.replacementSize(u8, proto, iden, @field(replacements, field.name));
+        try ally.realloc(buffer, space_needed);
+        std.mem.replace(u8, buffer, iden, @field(replacements, field.name), buffer);
+    }
+
+    return buffer;
 }
+
+const ProtoReplacementFields = struct {
+    fill_method_info: ?[]u8,
+    callargs: ?[]u8,
+    arg: ?[]u8,
+    callptrret: ?[]u8,
+    callptrretpass: ?[]u8,
+    callsiret: ?[]u8,
+    callsibegin: ?[]u8,
+    callptrargpass: ?[]u8,
+    callptrargs: ?[]u8,
+    callsiargpass: ?[]u8,
+    callsiargs: ?[]u8,
+    ver: ?[]u8,
+    @"const": ?[]u8,
+    rvoid: ?[]u8,
+    ret: ?[]u8,
+    callptrretdef: ?[]u8,
+};
 
 const proto =
     \\ #define GDVIRTUAL$VER($RET m_name $ARG)
