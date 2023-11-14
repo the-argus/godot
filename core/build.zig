@@ -159,6 +159,8 @@ pub fn configure(
         "version_hash.gen.cpp",
         try genVersionGeneratedHeaderContents(b.allocator),
     ));
+
+    state.executable.addCSourceFiles(sources.toOwnedSlice(), flags.toOwnedSlice());
 }
 
 /// Returns the path to the generated file
