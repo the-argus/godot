@@ -2,6 +2,8 @@ const std = @import("std");
 
 const interface = @import("../build_interface.zig");
 
+const dependOnGeneratedFile = interface.dependOnGeneratedFile;
+
 const here = "core/";
 
 const core_sources = &.{
@@ -161,19 +163,6 @@ pub fn configure(
     ));
 
     state.executable.addCSourceFiles(sources.toOwnedSlice(), flags.toOwnedSlice());
-}
-
-/// Returns the path to the generated file
-fn dependOnGeneratedFile(
-    b: *std.Build,
-    step: *std.Build.Step,
-    filename: []const u8,
-    contents: []const u8,
-) ![]const u8 {
-    const filepath = b.cache_root.join(b.allocator, &.{filename});
-    const sourcefile = b.addWriteFile(filepath, contents);
-    step.dependOn(sourcefile.step);
-    return filepath;
 }
 
 fn genVersionGeneratedHeaderContents(ally: std.mem.Allocator) void {

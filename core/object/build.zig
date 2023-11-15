@@ -1,5 +1,6 @@
 const std = @import("std");
 const interface = @import("../../build_interface.zig");
+const dependOnGeneratedFile = interface.dependOnGeneratedFile;
 
 const here = "core/object/";
 
@@ -22,12 +23,65 @@ pub fn configure(
     state: *interface.EngineBuildConfiguration.State,
 ) !void {
     _ = config;
-    _ = b;
     state.executable.addCSourceFiles(sources, &.{});
+
+    dependOnGeneratedFile(
+        b,
+        state.executable.step,
+        "gdvirtual.gen.inc",
+        try generateVirtualsIncludeContents(b.allocator),
+    );
 }
 
-fn generateVirtualsIncludeContents() ![]u8 {
-    _ = proto;
+fn generateVirtualsIncludeContents(ally: std.mem.Allocator) ![]u8 {
+    const max_versions = 12;
+
+    var buffer = std.ArrayList(u8).init(ally);
+    try buffer.appendSlice(
+        \\#ifndef GDVIRTUAL_GEN_H
+        \\#define GDVIRTUAL_GEN_H
+        \\
+        \\
+    );
+
+    var version_buffer: [256]u8 = undefined;
+    for (0..max_versions) |i| {
+        const str = std.fmt.bufPrint(version_buffer, "/* {any} Arguments */", .{i}) catch @panic("Programmer error in printing to stack buffer");
+        buffer.appendSlice(str);
+
+        const v1 = try generateVersionOfVirtuals(ally, .{
+            .argcount = i,
+            .constant = false,
+            .returns = false,
+        });
+        defer ally.free(v1);
+        const v2 = try generateVersionOfVirtuals(ally, .{
+            .argcount = i,
+            .constant = false,
+            .returns = true,
+        });
+        defer ally.free(v2);
+        const v3 = try generateVersionOfVirtuals(ally, .{
+            .argcount = i,
+            .constant = true,
+            .returns = false,
+        });
+        defer ally.free(v3);
+        const v4 = try generateVersionOfVirtuals(ally, .{
+            .argcount = i,
+            .constant = true,
+            .returns = true,
+        });
+        defer ally.free(v4);
+        buffer.appendSlice(v1);
+        buffer.appendSlice(v2);
+        buffer.appendSlice(v3);
+        buffer.appendSlice(v4);
+    }
+
+    try buffer.appendSlice("\n#endif");
+
+    return buffer.toOwnedSlice();
 }
 
 const VirtualsVersionConfig = struct {
